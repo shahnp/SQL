@@ -1,0 +1,644 @@
+---
+title: "SQL for DataScience"
+author: "Pankaj Shah"
+date: "6/1/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = FALSE, error=FALSE, warningFALSE}
+library(dplyr)
+```
+
+# SQL for DS
+```{r, message=FALSE}
+# Lets read the csv file from the source
+econ_df <- readr::read_csv('https://raw.githubusercontent.com/shahnp/Teaching_course_materials/master/web.csv')
+con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+copy_to(con, econ_df)
+```
+
+# Head
+```{r}
+# Always better to look the data even before we do anything on it.
+head(econ_df)
+```
+
+```{r}
+library(DataExplorer)
+df_info <- function(x) {
+  data  <- as.character(substitute(x))  # data frame name
+  size <- format(object.size(x), units="Mb")  # size (Mb)
+  plot_missing(data.frame(x)) # Vizualization of Missing Data.
+  
+  ##column information
+  column.info <- data.frame( column        = names(sapply(x, class)),
+                             class         = sapply(x, class),
+                             unique.values = sapply(x, function(y) length(unique(y))),
+                             missing.count = colSums(is.na(x)),
+                             missing.pct   = round(colSums(is.na(x)) / nrow(x) * 100, 2)) %>% arrange(desc(unique.values))
+                            
+  row.names(column.info) <- 1:nrow(column.info)
+  list(data.frame     = data.frame(name=data, size=size),
+       dimensions     = data.frame(rows=nrow(x), columns=ncol(x)),
+       column.details = column.info)
+}
+df_info(econ_df) # Info about datasets.
+```
+
+```{r, error= FALSE, message= FALSE, warning= FALSE}
+library(kableExtra)
+t(apply(econ_df, MARGIN = 2, function(x) range(x, na.rm=TRUE))) %>% kable()
+```
+
+# SQL SELECT
+```{r}
+# Lets get data about all the device used for purchase
+library(DBI)
+dbGetQuery(con, "SELECT device FROM econ_df") %>% table()
+```
+
+# 3 way table
+```{r}
+# Lets group them looking at the purchase 
+dbGetQuery(con, "SELECT referrer, device, purchase  FROM econ_df") %>% table()
+```
+
+# * 
+```{r}
+# Lets select everything from the datasets and se what other things we could look at.
+dbGetQuery(con, "SELECT * FROM econ_df LIMIT 5")
+```
+# * LIMIT 
+```{r}
+# If the page is too long we can limit that to 10.
+dbGetQuery(con, "SELECT * FROM econ_df limit 10") # LIMIT and limit is same not case sensitive but reserved words are always better in capital word.
+```
+
+# DISTINCT 
+```{r}
+# Lets see the referrer datasets as we have choosen distint it will all return value to 1.
+dbGetQuery(con, "SELECT distinct referrer FROM econ_df") %>% table()
+
+# once we remove distinct we will get a table 
+dbGetQuery(con, "SELECT referrer FROM econ_df") %>% table()
+```
+
+# SLICE
+
+## > (Greater than)
+```{r}
+# We can slice and dice based on Duration look at 468 apperance
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df 
+                 WHERE duration >= 468 
+                LIMIT 5")
+```
+
+## == (Equal to)
+```{r}
+# Other way of doing slicing and dicing would be to used == sign
+
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df
+                 WHERE device == 'mobile' 
+                 LIMIT 5")
+```
+
+##  AND OR 
+```{r}
+#  OR | AND ==  > 
+
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df 
+                 WHERE n_visit > 3 AND duration > 100 AND country == 'Ireland' OR country == 'France' LIMIT 5")
+
+```
+
+# BETWEEN OR
+```{r}
+# Combination of AND & OR
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df
+                 WHERE (n_visit == 5 OR n_visit == 3)  
+                 AND (device = 'Mobile' OR device = 'tablet') LIMIT 5") # case sensitive 'Mobile'
+
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df
+                 WHERE (n_visit == 5 OR n_visit == 3)  
+                 AND (device = 'mobile' OR device = 'tablet') LIMIT 5") # mobile -> double check with the data table.
+
+# Between Two Numbers 
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df
+                 WHERE n_visit BETWEEN 1 AND 3 AND device = 'mobile' LIMIT 5")
+```
+
+# WHERE IN 
+```{r}
+# Choice of the number, character etc.
+
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df 
+                 WHERE n_visit IN (2, 4, 6, 8, 10) LIMIT 5")
+
+dbGetQuery(con, "SELECT *
+                 FROM econ_df 
+                 WHERE n_visit IN (2,4,6,8,10) AND duration > 300 AND 
+                       country IN ('China', 'Japan', 'Colombia') LIMIT 5")
+```
+
+# NULL 
+```{r}
+# No Null value  as we have seen in the beginning.
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df 
+                 WHERE device IS NULL") # Zero 
+```
+
+# LIKE (%)
+```{r}
+# % represents rest part of the word.
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df  
+                 WHERE country LIKE 'P%' LIMIT 5") # Starting with P 
+
+dbGetQuery(con, "SELECT * 
+           FROM econ_df
+           WHERE country LIKE '%A'  LIMIT 5") # Ending in A not case sensitive.
+
+```
+
+# SUM 
+```{r}
+# 1.SUM
+dbGetQuery(con, "SELECT SUM(n_visit) FROM econ_df")
+
+# 2.SUM WHERE ==
+dbGetQuery(con, "SELECT SUM(n_visit) 
+                FROM econ_df
+                WHERE referrer == 'direct'")
+
+## 3.SUM  WHERE IN 
+dbGetQuery(con, "SELECT SUM(order_items)
+                 FROM econ_df
+                 WHERE device IN ('tablet', 'laptop')") 
+
+## 4.SUM Count GROUP ORDER
+dbGetQuery(con, "SELECT device,SUM(order_items), 
+                 Count(*) AS individual_device_group_by
+                 FROM econ_df
+                 GROUP BY device 
+                 ORDER by individual_device_group_by DESC")
+
+## 5. Count GROUP ORDER : No SUM 
+dbGetQuery(con, "SELECT device, 
+                 count(*) AS visits_device_group_by 
+                 FROM econ_df
+                 GROUP BY device 
+                 ORDER by visits_device_group_by DESC")
+
+## 6. > 
+dbGetQuery(con, "SELECT SUM(n_visit) 
+                 FROM econ_df
+                 WHERE n_visit > 5")
+```
+
+# AVERAGE
+```{r}
+# AVERAGE
+dbGetQuery(con, "SELECT AVG(n_visit) FROM econ_df")
+
+# WHERE  LIKE
+dbGetQuery(con, "SELECT AVG(n_visit) 
+                 FROM econ_df 
+                 WHERE country LIKE 'P%'")
+
+# WHERE == 
+dbGetQuery(con, "SELECT AVG(n_visit) AS avg_of_all_the_mobile 
+                 FROM econ_df 
+                 WHERE device == 'mobile'")
+```
+
+# MAX MIN 
+```{r}
+# MAX
+dbGetQuery(con, "SELECT MAX(n_visit) FROM econ_df")
+
+# MAX from single column
+dbGetQuery(con, "SELECT MAX(n_visit) 
+                 FROM econ_df
+                 WHERE device == 'tablet'")
+
+# Define the column name: AS 
+dbGetQuery(con, "SELECT MAX(n_visit) AS max_visit  
+                 FROM econ_df")
+
+# MAX GROUP_BY ORDER_BY
+dbGetQuery(con, "SELECT device, MAX(duration) AS max_duration_of_all_device 
+                 FROM econ_df 
+                 GROUP BY device 
+                 ORDER by max_duration_of_all_device DESC")
+
+# MIN 
+dbGetQuery(con, "SELECT MIN(n_visit) FROM econ_df")
+
+# MIN WHERE 
+dbGetQuery(con, "SELECT MIN(n_visit) 
+                 FROM econ_df 
+                 WHERE duration BETWEEN 600 AND 900")
+
+# MIN AS
+dbGetQuery(con, "SELECT MIN(duration) AS min_duration_of_all_time
+                 FROM econ_df")
+
+```
+
+# ORDER BY 
+```{r}
+# ORDER alphabetically countrywise
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df 
+                 ORDER BY country LIMIT 5")
+
+# DESC ORDER by n_visit
+dbGetQuery(con, "SELECT * 
+                 FROM econ_df 
+                 ORDER BY duration DESC LIMIT 5")
+```
+
+# Facebook posts by Members of the U.S. Congress in 2017
+
+**SQLite database** 
+
+
+
+```{r}
+# Library
+library(DBI)
+library("odbc")
+```
+
+
+```{r}
+# create database: this will create a file in our hard drive
+
+db <- dbConnect(RSQLite::SQLite(), "facebook-db.sqlite")
+
+# reading the first file
+congress <- read.csv("https://raw.githubusercontent.com/shahnp/data/master/congress-facebook-2017.csv",stringsAsFactors=F)
+
+# dbWriteTable : add dataframe to our database adding first table:
+dbWriteTable(db, "congress", congress, overwrite = TRUE) # once it is written it is already there.
+
+# testing that it works:
+dbListFields(db, "congress")
+dbGetQuery(db, 'SELECT * FROM congress LIMIT 5')
+```
+
+However, the files are too big to open them all in memory.
+Instead, we will open them one by one, and then append them to the table.
+
+```{r, warning= FALSE, error= FALSE, message= FALSE}
+fls <- list.files("~/Desktop/SQL-workshop-master/data/posts", full.names=TRUE)
+
+for (f in fls){
+  
+  message(f)
+
+  # read file into memory
+  fb <- read.csv(f, stringsAsFactors=F)
+  
+  # adding to table in SQL database
+  dbWriteTable(db, "posts", fb, append=TRUE)
+  
+}
+
+# testing that it works
+dbListFields(db, "posts")
+dbGetQuery(db, 'SELECT * FROM posts LIMIT 5')
+
+# what if we make a mistake and want to remove the table?
+# dbRemoveTable(db, "posts")
+
+# and we close the connection for now
+dbDisconnect(db)
+```
+
+# Querying an SQL database:
+
+```{r}
+db <- dbConnect(RSQLite::SQLite(), "facebook-db.sqlite")
+test <- dbGetQuery(db, 'SELECT * FROM congress LIMIT 5')
+glimpse(test)
+```
+
+```{r }
+# test if we can extract any data.
+dbGetQuery(db, "SELECT * FROM congress LIMIT 5")
+```
+
+```{r}
+# Querying :one column
+dbGetQuery(db, "SELECT name FROM congress LIMIT 5") # select certain column from the database.
+```
+
+```{r}
+# Select multiple columns
+dbGetQuery(db, "SELECT name, party FROM congress LIMIT 5")
+```
+# 
+Lets look at the post 
+
+```{r}
+dbGetQuery(db, "SELECT * FROM posts LIMIT 5")
+```
+
+# UPPER
+```{r}
+dbGetQuery(db, "SELECT UPPER(message) FROM posts LIMIT 5")
+```
+
+```{r}
+# We have a lower link which we made Upper adding expressions.
+dbGetQuery(db, "SELECT from_name, likes_count/comments_count, UPPER(type) FROM posts LIMIT 5")
+```
+
+```{r}
+# Adding aliases to the new columns : AS 
+dbGetQuery(db, "SELECT from_name, likes_count/comments_count AS lIKE_RATIO FROM posts LIMIT 5")
+```
+
+```{r}
+
+# Best way to write the code in multiple level so that user can read with ease.
+
+# You can modify how to show the column name 
+dbGetQuery(db, "SELECT LOWER(from_name),
+           likes_count/comments_count AS like_ratio 
+           FROM posts 
+           LIMIT 5")
+```
+
+# Distinct
+```{r}
+# Unique values 
+dbGetQuery(db, "SELECT DISTINCT from_name 
+           FROM posts 
+           LIMIT 5")
+```
+
+```{r}
+# selecting based on values of a column
+dbGetQuery(db, "SELECT name, party 
+           FROM congress
+           WHERE party = 'Republican'
+           LIMIT 5")
+```
+
+```{r}
+# working with dates greater than
+dbGetQuery(db, "SELECT from_name, type, date 
+           FROM posts
+           WHERE date > '2017-01-01'
+           LIMIT 5")
+
+
+# Between two dates 
+dbGetQuery(db, "SELECT from_name, type, date 
+           FROM posts
+           WHERE date BETWEEN '2017-01-01' AND '2017-01-03'
+           LIMIT 5")
+```
+
+```{r}
+# AND operator
+dbGetQuery(db, "SELECT from_name, type, date, likes_count 
+           FROM posts
+           WHERE date > '2017-06-01' AND type != 'photo'AND likes_count > 500 
+           ORDER by likes_count DESC
+           LIMIT 5")
+```
+
+```{r}
+# OR operator
+dbGetQuery(db, "SELECT from_name, type, date, comments_count 
+           FROM posts
+           WHERE comments_count>100 AND (type = 'photo' OR type = 'video')
+           LIMIT 5")
+```
+
+```{r}
+# IN
+
+dbGetQuery(db, "SELECT from_name, type, date, comments_count 
+           FROM posts
+           WHERE type IN ('video', 'event')
+           LIMIT 5")
+```
+
+# Matching conditions _ %:
+```{r}
+# _ matches exactly one character:
+dbGetQuery(db, "SELECT from_name, type, date, comments_count 
+           FROM posts
+           WHERE date LIKE '2017-01-__'
+           LIMIT 5")
+
+# % matches any number of characters:
+dbGetQuery(db, "SELECT from_name, type, date, comments_count 
+           FROM posts
+           WHERE date LIKE '2017-03%'
+           LIMIT 5")
+```
+
+
+```{r}
+# SQLite does not have Regular Expressions, but we can get creative.
+dbGetQuery(db, "SELECT from_name, message, date
+           FROM posts
+           WHERE message LIKE '%hungary%'
+           LIMIT 5")
+```
+
+# Group_by
+```{r}
+dbGetQuery(db, 
+  "SELECT from_name, COUNT(*) AS post_count
+  FROM posts
+  GROUP BY from_name
+  LIMIT 3")
+```
+
+```{r}
+# sort : type_count by ORDER:
+dbGetQuery(db, 
+  "SELECT type, COUNT(type) AS type_count
+  FROM posts
+  GROUP BY type
+  ORDER BY type_count LIMIT 5")
+
+# now in descending orders
+dbGetQuery(db, 
+  "SELECT type, COUNT(type) AS type_count
+  FROM posts
+  GROUP BY type
+  ORDER BY type_count DESC LIMIT 5")
+```
+
+
+```{r}
+# top 3 most popular post?
+dbGetQuery(db, 
+  "SELECT from_name, message, likes_count, datetime
+  FROM posts
+  ORDER BY likes_count DESC
+  LIMIT 3")
+```
+
+```{r}
+# You can also specify the column number instead of the name
+dbGetQuery(db, 
+  "SELECT from_name, message, likes_count, datetime
+  FROM posts
+  ORDER BY likes_count DESC
+  LIMIT 2")
+```
+
+```{r}
+# what was the post with the highest comment to like ratio?
+# We subset only posts with 1000 likes or more to avoid outliers.
+dbGetQuery(db,
+  "SELECT from_name, message, likes_count, comments_count, date,   
+      comments_count/likes_count AS comment_like_ratio
+  FROM posts
+  WHERE likes_count > 1000
+  ORDER BY comment_like_ratio DESC
+  LIMIT 5")
+```
+
+# Join 
+
+```{r}
+library(DBI)
+db <- dbConnect(RSQLite::SQLite(), "facebook-db.sqlite")
+
+dbGetQuery(db, 
+  "SELECT posts.likes_count, congress.party, posts.date
+    FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+    LIMIT 5")
+```
+
+# ON 
+```{r}
+dbGetQuery(db, 
+  "SELECT posts.from_name, posts.message, posts.shares_count, congress.party 
+  FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+  WHERE party = 'Democrat'
+  ORDER BY shares_count DESC
+  LIMIT 3")
+```
+
+```{r}
+dbGetQuery(db, 
+  "SELECT posts.from_name, posts.message, posts.shares_count, congress.party 
+  FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+  WHERE party = 'Republican'
+  ORDER BY shares_count DESC
+  LIMIT 3")
+```
+
+# Grouping and Aggregating
+```{r}
+# COUNT * = total no. of rows
+
+dbGetQuery(db, 'SELECT COUNT(*) FROM posts')
+dbGetQuery(db, 'SELECT COUNT(*) FROM congress')
+```
+
+
+```{r}
+dbGetQuery(db, 
+  "SELECT congress.party, COUNT(*) AS total_posts
+  FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+  GROUP BY congress.party")
+
+dbGetQuery(db, 
+  "SELECT congress.party, congress.gender, COUNT(*) AS total_posts
+  FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+  GROUP BY congress.party, congress.gender")
+```
+
+
+```{r}
+dbGetQuery(db, 
+  "SELECT congress.party, domain, COUNT(*) AS domain_count
+  FROM posts JOIN Congress
+    ON congress.screen_name = posts.screen_name
+  WHERE congress.party = 'Democrat'
+  GROUP BY domain
+  ORDER BY domain_count DESC
+  LIMIT 5")
+```
+
+```{r}
+dbGetQuery(db, 
+  "SELECT congress.party, domain, COUNT(*) AS domain_count
+  FROM posts JOIN Congress
+    ON congress.screen_name = posts.screen_name
+  WHERE congress.party = 'Republican'
+  GROUP BY domain
+  ORDER BY domain_count DESC
+  LIMIT 5")
+```
+
+```{r}
+# Average # of posts by party
+dbGetQuery(db, 
+  "SELECT congress.party, AVG(posts.likes_count), COUNT(*) 
+  FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+  GROUP BY congress.party")
+
+# DIFFERENT WAY:
+dbGetQuery(db, 
+  "SELECT congress.party, SUM(posts.likes_count)/COUNT(*) AS average 
+  FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+  GROUP BY congress.party")
+```
+
+
+```{r}
+# most popular post by party
+dbGetQuery(db, 
+  "SELECT from_name, message, congress.party, MAX(posts.likes_count), COUNT(*) 
+  FROM posts JOIN congress
+    ON congress.screen_name = posts.screen_name
+  GROUP BY congress.party")
+```
+
+```{r}
+# number of posts by day of the month
+dbGetQuery(db, 
+  "SELECT SUBSTR(date, 9, 10) AS day_of_month, COUNT(*) as post_count
+  FROM posts
+  GROUP BY day_of_month")
+```
+
+```{r, error= FALSE, message= FALSE, warning= FALSE}
+library(sqldf)
+
+sqldf("SELECT count(*) from congress")
+```
+
